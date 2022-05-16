@@ -24,11 +24,45 @@ class OfferService
     def update_offer_state(offer, current_user)
       case offer.state
       when 'sent' then send_offer!(offer, current_user)
+      when 'accepted' then accept!(offer, current_user)
+      when 'rejected' then reject!(offer, current_user)
       end
     end
 
     def send_offer!(offer, current_user)
       delay.deliver_offer(offer.id, current_user)
+    end
+
+    def accept!(offer, current_user)
+      offer.update_attributes!(accepted_by: current_user, accepted_at: Time.now.utc)
+      delay.deliver_acceptance_notification(offer.id)
+    end
+
+    def reject!(offer, current_user)
+      offer.update_attributes!(rejected_by: current_user, rejected_at: Time.now.utc)
+      delay.deliver_rejection_notification(offer.id)
+    end
+
+    private
+
+    def deliver_acceptance_notification(offer_id)
+      offer = Offer.find(offer_id)
+      artist = Gravity.client.artist(id: offer.submission.artist_id)._get
+
+      PartnerMailer.offer_acceptance_notification(
+        offer: offer,
+        artist: artist
+      ).deliver_now
+    end
+
+    def deliver_rejection_notification(offer_id)
+      offer = Offer.find(offer_id)
+      artist = Gravity.client.artist(id: offer.submission.artist_id)._get
+
+      PartnerMailer.offer_rejection_notification(
+        offer: offer,
+        artist: artist
+      ).deliver_now
     end
 
     def deliver_offer(offer_id, current_user)
